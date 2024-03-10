@@ -1,0 +1,125 @@
+app: blog-summarizer
+service: BlogSummarizer
+
+frameworkVersion: "3"
+
+provider:
+  name: aws
+  runtime: python3.11
+  iam:
+    role:
+      statements:
+        - Effect: "Allow"
+          Resource:
+            - "arn:aws:secretsmanager:us-east-1:643713846674:secret:BlogSummarizer-ApifyToken-mJdUQy"
+            - "arn:aws:secretsmanager:us-east-1:643713846674:secret:BlogSummarizer-OpenAIKey-3D0xCl"
+            - "arn:aws:secretsmanager:us-east-1:643713846674:secret:BlogSummarizer-NotionToken-lbwg2t"
+          Action: "secretsmanager:GetSecretValue"
+  timeout: 10
+  memorySize: 128
+  environment:
+    OPENAI_MODEL: gpt-3.5-turbo-1106
+    APIFY_TOKEN: sm:BlogSummarizer-ApifyToken
+    OPENAI_API_KEY: sm:BlogSummarizer-OpenAIKey
+    NOTION_TOKEN: sm:BlogSummarizer-NotionToken
+    NOTION_DATABASE_ID: eee29f37ef0f4ff99b8b03fdd7538334 # Cloud Blog Posts Summaries
+
+custom:
+  lambdaInsights:
+    defaultLambdaInsights: true
+    lambdaInsightsVersion: 35
+
+package:
+  exclude:
+    - ./**
+  include:
+    - blog_summarizer/**
+    - requirements.txt
+
+functions:
+  # HelloWorld:
+  #   handler: blog_summarizer/handler/hello_world.handler
+  #   events:
+  #     - http:
+  #         path: /helloWorld
+  #         method: POST
+  #         authorizer: arn:aws:lambda:us-east-1:643713846674:function:LambdaAuthorizer-dev-TokenAuthorizer
+  # ${include(functions/aws-blog-functions.yaml)}
+
+  # AWS Blog
+  AWSBlogRetrieveScrapedData:
+    handler: blog_summarizer/handler/aws_blog.retrieve_scraped_data
+  AWSBlogCheckDocumentExist:
+    handler: blog_summarizer/handler/aws_blog.check_document_exist
+  AWSBlogExtractInsights:
+    handler: blog_summarizer/handler/aws_blog.extract_insights
+    timeout: 30
+  AWSBlogUpsertDocument:
+    handler: blog_summarizer/handler/aws_blog.upsert_document
+
+  # AWS Blog
+  GCPBlogRetrieveScrapedData:
+    handler: blog_summarizer/handler/gcp_blog.retrieve_scraped_data
+  GCPBlogCheckDocumentExist:
+    handler: blog_summarizer/handler/gcp_blog.check_document_exist
+  GCPBlogExtractInsights:
+    handler: blog_summarizer/handler/gcp_blog.extract_insights
+    timeout: 30
+  GCPBlogUpsertDocument:
+    handler: blog_summarizer/handler/gcp_blog.upsert_document
+
+  # Azure Blog
+  AzureBlogRetrieveScrapedData:
+    handler: blog_summarizer/handler/azure_blog.retrieve_scraped_data
+  AzureBlogCheckDocumentExist:
+    handler: blog_summarizer/handler/azure_blog.check_document_exist
+  AzureBlogExtractInsights:
+    handler: blog_summarizer/handler/azure_blog.extract_insights
+    timeout: 30
+  AzureBlogUpsertDocument:
+    handler: blog_summarizer/handler/azure_blog.upsert_document
+
+stepFunctions:
+  stateMachines:
+    AWSBlogSummarizer:
+      name: AWSBlogSummarizer
+      events:
+        - http:
+            path: /apify/aws-blog/process
+            method: POST
+            authorizer: arn:aws:lambda:us-east-1:643713846674:function:LambdaAuthorizer-dev-TokenAuthorizer
+      definition:
+        ${file(state-machines/AWSBlogSummarizer.yaml)}
+      tags:
+        team: izlobin
+        app: blog-summarizer
+    GCPBlogSummarizer:
+      name: GCPBlogSummarizer
+      events:
+        - http:
+            path: /apify/gcp-blog/process
+            method: POST
+            authorizer: arn:aws:lambda:us-east-1:643713846674:function:LambdaAuthorizer-dev-TokenAuthorizer
+      definition:
+        ${file(state-machines/GCPBlogSummarizer.yaml)}
+      tags:
+        team: izlobin
+        app: blog-summarizer
+    AzureBlogSummarizer:
+      name: AzureBlogSummarizer
+      events:
+        - http:
+            path: /apify/azure-blog/process
+            method: POST
+            authorizer: arn:aws:lambda:us-east-1:643713846674:function:LambdaAuthorizer-dev-TokenAuthorizer
+      definition:
+        ${file(state-machines/AzureBlogSummarizer.yaml)}
+      tags:
+        team: izlobin
+        app: blog-summarizer
+  validate: true
+
+plugins:
+  - serverless-step-functions
+  - serverless-python-requirements
+  - serverless-plugin-lambda-insights

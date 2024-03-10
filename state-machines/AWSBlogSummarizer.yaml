@@ -1,0 +1,152 @@
+{
+  "Comment": "Workflow retrieves blog post articles from Apify, gets insights about them with OpenAI, formats the output, and upserts to the Notion database",
+  "StartAt": "Apify_GetDatasetItems",
+  "States": {
+    "Apify_GetDatasetItems": {
+      "Next": "IterateOverDatasetItems",
+      "Resource": "arn:aws:lambda:us-east-1:643713846674:function:BlogSummarizer-dev-AWSBlogRetrieveScrapedData:$LATEST",
+      "ResultPath": "$.GetDatabaseItemsResult",
+      "TimeoutSeconds": 10,
+      "Type": "Task"
+    },
+    "IterateOverDatasetItems": {
+      "End": true,
+      "ItemProcessor": {
+        "ProcessorConfig": {
+          "Mode": "INLINE"
+        },
+        "StartAt": "Notion_CheckDocumentExist",
+        "States": {
+          "Choice": {
+            "Choices": [
+              {
+                "BooleanEquals": false,
+                "Next": "OpenAI_ExtractInsights",
+                "Variable": "$.CheckDocumentExistResult.documentExist"
+              }
+            ],
+            "Default": "Success",
+            "Type": "Choice"
+          },
+          "Notion_CheckDocumentExist": {
+            "Comment": "Check if the item with a certain URL already exists in the Notion database",
+            "Next": "Choice",
+            "Parameters": {
+              "FunctionName": "arn:aws:lambda:us-east-1:643713846674:function:BlogSummarizer-dev-AWSBlogCheckDocumentExist:$LATEST",
+              "Payload": {
+                "url.$": "$.url"
+              }
+            },
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "ResultPath": "$.CheckDocumentExistResult",
+            "ResultSelector": {
+              "documentExist.$": "$.Payload.documentExist"
+            },
+            "Retry": [
+              {
+                "BackoffRate": 2,
+                "ErrorEquals": [
+                  "Lambda.ServiceException",
+                  "Lambda.AWSLambdaException",
+                  "Lambda.SdkClientException",
+                  "Lambda.TooManyRequestsException",
+                  "States.Timeout"
+                ],
+                "IntervalSeconds": 1,
+                "JitterStrategy": "FULL",
+                "MaxAttempts": 5,
+                "MaxDelaySeconds": 10
+              }
+            ],
+            "TimeoutSeconds": 10,
+            "Type": "Task"
+          },
+          "Notion_UpsertDocument": {
+            "End": true,
+            "Parameters": {
+              "FunctionName": "arn:aws:lambda:us-east-1:643713846674:function:BlogSummarizer-dev-AWSBlogUpsertDocument:$LATEST",
+              "Payload": {
+                "authors.$": "$.authors",
+                "blog.$": "$.blog",
+                "categories.$": "$.categories",
+                "date.$": "$.date",
+                "stakeholders.$": "$.ExtractInsightsResult.stakeholders",
+                "summary.$": "$.ExtractInsightsResult.summary",
+                "tags.$": "$.tags",
+                "takeaways.$": "$.ExtractInsightsResult.takeaways",
+                "technologies.$": "$.ExtractInsightsResult.technologies",
+                "title.$": "$.title",
+                "url.$": "$.url"
+              }
+            },
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "ResultPath": "$.UpsertDocumentResult",
+            "ResultSelector": {
+              "documentInserted.$": "$.Payload.documentInserted"
+            },
+            "Retry": [
+              {
+                "BackoffRate": 2,
+                "ErrorEquals": [
+                  "Lambda.ServiceException",
+                  "Lambda.AWSLambdaException",
+                  "Lambda.SdkClientException",
+                  "Lambda.TooManyRequestsException",
+                  "APIResponseError",
+                  "States.Timeout"
+                ],
+                "IntervalSeconds": 1,
+                "JitterStrategy": "FULL",
+                "MaxAttempts": 5,
+                "MaxDelaySeconds": 10
+              }
+            ],
+            "TimeoutSeconds": 10,
+            "Type": "Task"
+          },
+          "OpenAI_ExtractInsights": {
+            "Comment": "OpenAI inferrence to extract Insights from the blog article",
+            "Next": "Notion_UpsertDocument",
+            "Parameters": {
+              "FunctionName": "arn:aws:lambda:us-east-1:643713846674:function:BlogSummarizer-dev-AWSBlogExtractInsights:$LATEST",
+              "Payload": {
+                "text.$": "$.text",
+                "title.$": "$.title"
+              }
+            },
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "ResultPath": "$.ExtractInsightsResult",
+            "ResultSelector": {
+              "stakeholders.$": "$.Payload.stakeholders",
+              "summary.$": "$.Payload.summary",
+              "takeaways.$": "$.Payload.takeaways",
+              "technologies.$": "$.Payload.technologies"
+            },
+            "Retry": [
+              {
+                "BackoffRate": 2,
+                "ErrorEquals": [
+                  "Lambda.ServiceException",
+                  "Lambda.AWSLambdaException",
+                  "Lambda.SdkClientException",
+                  "Lambda.TooManyRequestsException"
+                ],
+                "IntervalSeconds": 1,
+                "MaxAttempts": 3
+              }
+            ],
+            "TimeoutSeconds": 30,
+            "Type": "Task"
+          },
+          "Success": {
+            "Type": "Succeed"
+          }
+        }
+      },
+      "ItemsPath": "$.GetDatabaseItemsResult",
+      "MaxConcurrency": 3,
+      "Type": "Map"
+    }
+  },
+  "TimeoutSeconds": 300
+}
